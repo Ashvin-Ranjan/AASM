@@ -4,8 +4,8 @@ pub enum SInstrIdent {
 }
 
 pub enum IInstrIdent {
-    ADI = 2,
-    SBI = 4,
+    ADD = 2,
+    SUB = 4,
 }
 
 pub enum RInstrIdent {
@@ -29,6 +29,7 @@ pub enum Instr {
     SInstr(SInstrIdent),
     IInstr(IInstrIdent, bool, RegisterIdent, RegisterIdent, u16, u8),
     RInstr(RInstrIdent, bool, RegisterIdent, RegisterIdent, RegisterIdent),
+    Value(Vec<u8>),
 }
 
 fn convert_s_instr(ident: u8) -> Vec<u8> {
@@ -60,6 +61,9 @@ pub fn convert_instr(i: Vec<Instr>) -> Vec<u8> {
             }
             Instr::IInstr(ident, size, r1, r2, addr, opt) => {
                 out.append(&mut convert_i_instr(ident as u32, size as u32, r1 as u32, r2 as u32, addr as u32, opt as u32));
+            }
+            Instr::Value(val) => {
+                out.append(&mut val.clone());
             }
         }
     }

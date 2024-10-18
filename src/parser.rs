@@ -6,8 +6,23 @@ enum LineType {
     SInstr,
     IInstr,
     RInstr,
+    Value,
     Label,
     Empty,
+}
+
+fn trim_zeros(v: Vec<u8>) -> Vec<u8> {
+    let mut out = vec![];
+    let mut trailing = true;
+    for i in v {
+        if trailing && i != 0 {
+            trailing = false;
+            out.push(i);
+        } else if !trailing {
+            out.push(i)
+        }
+    }
+    return out;
 }
 
 fn register_name_to_ident(reg: char) -> Result<RegisterIdent, AssemblerError> {
@@ -42,8 +57,8 @@ fn register_scalar_to_ident(scalar: String) -> Result<(RegisterIdent, u8), Assem
 
 fn i_instr_name_to_ident(instr: String) -> Result<IInstrIdent, AssemblerError> {
     return match instr.to_lowercase().as_str() {
-        "add" => Ok(IInstrIdent::ADI),
-        "sub" => Ok(IInstrIdent::SBI),
+        "add" => Ok(IInstrIdent::ADD),
+        "sub" => Ok(IInstrIdent::SUB),
         _ => Err(AssemblerError::InvalidInstructionError)
     }
 }
@@ -92,6 +107,34 @@ fn handle_regex_line(line: String, regex: Regex, t: LineType) -> Result<(Vec<Str
     return Err(AssemblerError::InvalidSyntaxError);
 }
 
+fn parse_value(input: String) -> Result<Vec<u8>, AssemblerError> {
+    if input.starts_with("0x") {
+        if let Ok(numb) = usize::from_str_radix(input.trim_start_matches("0x"), 16) {
+            return Ok(trim_zeros(numb.to_be_bytes().to_vec()));
+        } else {
+            return Err(AssemblerError::LiteralOverflowError);
+        }
+    } else if input.starts_with("0b") {
+        if let Ok(numb) = usize::from_str_radix(input.trim_start_matches("0b"), 2) {
+            return Ok(trim_zeros(numb.to_be_bytes().to_vec()));
+        } else {
+            return Err(AssemblerError::LiteralOverflowError);
+        }
+    } else if input.starts_with("\"") {
+        if let Ok(s) = snailquote::unescape(&input) {
+            return Ok(s.into_bytes().to_vec());
+        } else {
+            return Err(AssemblerError::InvalidStringError)
+        }
+    } else {
+        if let Ok(numb) = usize::from_str_radix(&input, 10) {
+            return Ok(trim_zeros(numb.to_be_bytes().to_vec()));
+        } else {
+            return Err(AssemblerError::LiteralOverflowError);
+        }
+    }
+}
+
 fn parse_line(input: String) -> Result<(Vec<String>, LineType), AssemblerError> {
     let trimmed = input.trim();
     if trimmed.is_empty() || trimmed.starts_with(";") {
@@ -106,14 +149,17 @@ fn parse_line(input: String) -> Result<(Vec<String>, LineType), AssemblerError> 
         Regex::new(r"([a-zA-Z]{3})(b?) +(%[abcrixyz]) *, *(?:([24]\(%[abcrixyz]\)|%[abcrixyz]) *, *)?(\$?(?:0x[a-fA-F0-9]+|0b[01]+|[0-9]+))").unwrap()
     });
     static S_INSTR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"([a-zA-Z]{3})").unwrap());
+    static VAL_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"#value +("(?:[^"\\]|\\.)*"|0x[0-9a-fA-F]+|0b[01]+|[0-9]+)"#).unwrap());
 
-    if R_INSTR_RE.is_match(trimmed) {
+    if VAL_RE.is_match(trimmed) {
+        return handle_regex_line(trimmed.to_owned(), VAL_RE.clone(), LineType::Value);
+    } else if R_INSTR_RE.is_match(trimmed) {
         return handle_regex_line(trimmed.to_owned(), R_INSTR_RE.clone(), LineType::RInstr);
     } else if I_INSTR_RE.is_match(trimmed) {
         return handle_regex_line(trimmed.to_owned(), I_INSTR_RE.clone(), LineType::IInstr);
     } else if S_INSTR_RE.is_match(trimmed) {
         return handle_regex_line(trimmed.to_owned(), S_INSTR_RE.clone(), LineType::SInstr);
-    }
+    } 
     
     return Err(AssemblerError::InvalidSyntaxError)
 }
@@ -134,6 +180,10 @@ fn line_to_instr(input: Vec<String>, line_type: LineType) -> Result<Option<Instr
             };
             return Ok(Some(Instr::RInstr(ident, size, reg1, reg2, reg3)));
         },
+        LineType::Value => {
+            let value = parse_value(input[0].clone())?;
+            return Ok(Some(Instr::Value(value)))
+        }
         _ => return Ok(None),
     }
 }

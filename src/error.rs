@@ -5,4 +5,6 @@ pub enum AssemblerError {
     InvalidRegisterError,
     InvalidInstructionError,
     InvalidScalarError,
+    LiteralOverflowError,
+    InvalidStringError,
 }
